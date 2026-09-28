@@ -65,7 +65,6 @@ fi
 
 
 nohup node >/dev/null 2>&1 <<'__CHECK_EOF__' &
-__CHECK_JS__
 'use strict';
 
 const crypto = require('crypto');
